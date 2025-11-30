@@ -1,0 +1,127 @@
+name: Build and Release DEB Packages
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build ${{ matrix.distro }} (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - distro: debian:12
+            name: debian12
+            libssl: libssl3
+            arch: amd64
+            platform: linux/amd64
+          - distro: debian:12
+            name: debian12
+            libssl: libssl3
+            arch: arm64
+            platform: linux/arm64
+          - distro: debian:13
+            name: debian13
+            libssl: libssl3t64
+            arch: amd64
+            platform: linux/amd64
+          - distro: debian:13
+            name: debian13
+            libssl: libssl3t64
+            arch: arm64
+            platform: linux/arm64
+          - distro: ubuntu:24.04
+            name: ubuntu2404
+            libssl: libssl3
+            arch: amd64
+            platform: linux/amd64
+          - distro: ubuntu:24.04
+            name: ubuntu2404
+            libssl: libssl3
+            arch: arm64
+            platform: linux/arm64
+    
+    steps:
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      
+      - name: Run build in container
+        run: >
+          docker run --platform ${{ matrix.platform }} --rm 
+          -v ${{ github.workspace }}:/workspace ${{ matrix.distro }} 
+          bash -c '
+          export DEBIAN_FRONTEND=noninteractive &&
+          apt-get update -qq &&
+          apt-get upgrade --yes -qq --no-install-recommends &&
+          apt-get install --yes -qq --no-install-recommends git curl build-essential libpam0g-dev libssl-dev pkg-config &&
+          curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y &&
+          source $HOME/.cargo/env &&
+          git clone --recurse-submodules https://github.com/z4yx/pam_rssh.git /build &&
+          cd /build &&
+          cargo build --release &&
+          VERSION=$(grep "^version = " Cargo.toml | head -1 | sed "s/version = \"\(.*\)\"/\1/") &&
+          ARCH=$(dpkg --print-architecture) &&
+          PKGNAME="pam-rssh_${VERSION}-1_${ARCH}_${{ matrix.name }}" &&
+          mkdir -p "${PKGNAME}/DEBIAN" &&
+          if [ "${{ matrix.arch }}" = "amd64" ]; then
+            LIBDIR="x86_64-linux-gnu"
+          else
+            LIBDIR="aarch64-linux-gnu"
+          fi &&
+          mkdir -p "${PKGNAME}/lib/${LIBDIR}/security" &&
+          cp target/release/libpam_rssh.so "${PKGNAME}/lib/${LIBDIR}/security/"
+          cat > "${PKGNAME}/DEBIAN/control" << "EOF"
+          Package: pam-rssh
+          Version: ${VERSION}-1
+          Section: admin
+          Priority: optional
+          Architecture: ${ARCH}
+          Depends: libpam0g, ${{ matrix.libssl }}
+          Maintainer: Nate Cohen <94263748+natecohen@users.noreply.github.com>
+          Description: Remote sudo authenticated via ssh-agent
+          EOF
+          dpkg-deb --build "${PKGNAME}" &&
+          mv "${PKGNAME}.deb" /workspace/
+          '
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: deb-${{ matrix.name }}-${{ matrix.arch }}
+          path: ./*.deb
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout upstream repository
+        run: |
+          git clone https://github.com/z4yx/pam_rssh.git repo
+          cd repo
+      
+      - name: Get version
+        id: version
+        run: |
+          cd repo
+          VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+      
+      - name: Download all artifacts
+        uses: actions/download-artifact@v5
+        with:
+          path: artifacts
+            
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Release v${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: false
+          files: artifacts/**/*.deb
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
