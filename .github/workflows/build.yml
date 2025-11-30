@@ -46,31 +46,31 @@ jobs:
         uses: docker/setup-qemu-action@v3
       
       - name: Run build in container
-        run: >
-          docker run --platform ${{ matrix.platform }} --rm 
-          -v ${{ github.workspace }}:/workspace ${{ matrix.distro }} 
+        run: |
+          docker run --platform ${{ matrix.platform }} --rm \
+          -v ${{ github.workspace }}:/workspace ${{ matrix.distro }} \
           bash -c '
-          export DEBIAN_FRONTEND=noninteractive &&
-          apt-get update -qq &&
-          apt-get upgrade --yes -qq --no-install-recommends &&
-          apt-get install --yes -qq --no-install-recommends git curl ca-certificates build-essential libpam0g-dev libssl-dev pkg-config &&
-          curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y &&
-          source $HOME/.cargo/env &&
-          git clone --recurse-submodules https://github.com/z4yx/pam_rssh.git /build &&
-          cd /build &&
-          cargo build --release &&
-          VERSION=$(grep "^version = " Cargo.toml | head -1 | sed "s/version = \"\(.*\)\"/\1/") &&
-          ARCH=$(dpkg --print-architecture) &&
-          PKGNAME="pam-rssh_${VERSION}-1_${ARCH}_${{ matrix.name }}" &&
-          mkdir -p "${PKGNAME}/DEBIAN" &&
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update -qq
+          apt-get upgrade --yes -qq --no-install-recommends
+          apt-get install --yes -qq --no-install-recommends ca-certificates git curl build-essential libpam0g-dev libssl-dev pkg-config
+          curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          source $HOME/.cargo/env
+          git clone --recurse-submodules https://github.com/z4yx/pam_rssh.git /build
+          cd /build
+          cargo build --release
+          VERSION=$(grep "^version = " Cargo.toml | head -1 | sed "s/version = \"\(.*\)\"/\1/")
+          ARCH=$(dpkg --print-architecture)
+          PKGNAME="pam-rssh_${VERSION}-1_${ARCH}_${{ matrix.name }}"
           if [ "${{ matrix.arch }}" = "amd64" ]; then
             LIBDIR="x86_64-linux-gnu"
           else
             LIBDIR="aarch64-linux-gnu"
-          fi &&
-          mkdir -p "${PKGNAME}/lib/${LIBDIR}/security" &&
+          fi
+          mkdir -p "${PKGNAME}/DEBIAN"
+          mkdir -p "${PKGNAME}/lib/${LIBDIR}/security"
           cp target/release/libpam_rssh.so "${PKGNAME}/lib/${LIBDIR}/security/"
-          cat > "${PKGNAME}/DEBIAN/control" << "EOF"
+          cat > "${PKGNAME}/DEBIAN/control" << -EOF
           Package: pam-rssh
           Version: ${VERSION}-1
           Section: admin
@@ -80,7 +80,7 @@ jobs:
           Maintainer: Nate Cohen <94263748+natecohen@users.noreply.github.com>
           Description: Remote sudo authenticated via ssh-agent
           EOF
-          dpkg-deb --build "${PKGNAME}" &&
+          dpkg-deb --build "${PKGNAME}"
           mv "${PKGNAME}.deb" /workspace/
           '
       
