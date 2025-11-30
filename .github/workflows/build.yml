@@ -53,7 +53,7 @@ jobs:
           export DEBIAN_FRONTEND=noninteractive &&
           apt-get update -qq &&
           apt-get upgrade --yes -qq --no-install-recommends &&
-          apt-get install --yes -qq --no-install-recommends git curl build-essential libpam0g-dev libssl-dev pkg-config &&
+          apt-get install --yes -qq --no-install-recommends git curl ca-certificates build-essential libpam0g-dev libssl-dev pkg-config &&
           curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y &&
           source $HOME/.cargo/env &&
           git clone --recurse-submodules https://github.com/z4yx/pam_rssh.git /build &&
